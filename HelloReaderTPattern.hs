@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-import Test.Hspec (hspec, describe, it, shouldBe) -- 1) Import testing framework
+import Test.Hspec (hspec, describe, it, shouldBe)
 
 import Control.Monad.Reader (ReaderT, MonadReader)
 import Control.Monad.Reader (runReaderT, ask)
@@ -26,23 +26,30 @@ instance HasName String where
     getName :: String -> String
     getName str = str
 
-main :: IO () -- 2) Write a spec for the computeGreeting computation
-main = hspec $ do
-    describe "computeGreeting" $ do
-        it "computes the correct greeting" $ do
-            let ada = "Ada Lovelace" -- 3) Thanks to the "Has- typeclass approach", we can execute computeGreeting with only the environment it cares about
-            res <- runReaderT computeGreeting ada
-            res `shouldBe` "Hello, Ada Lovelace"
+class Monad m => OutPut m where -- 1) Extract the effect of outputting content to a typeclass
+    outPut :: String -> m ()
+
+instance OutPut (ReaderT Env IO) where
+    outPut :: String -> ReaderT Env IO ()
+    outPut msg = liftIO $ putStrLn msg
+
+main :: IO ()
+main = do
+    env <- initializeEnv
+    runReaderT program env
 
 initializeEnv :: IO Env
 initializeEnv = do
     name <- prompt "Enter a name" >> getLine
     return (Env { envName = name })
 
-program :: (HasName env, MonadIO m, MonadReader env m) => m ()
+-- 2) By removing the MonadIO constraint (and replacing it with OutPut
+-- constraint), computations defined in terms of `program` can no longer perform
+-- arbitrary IO.
+program :: (HasName env, OutPut m, MonadReader env m) => m ()
 program = do
     greeting <- computeGreeting
-    liftIO $ putStrLn greeting
+    outPut greeting
 
 computeGreeting :: (HasName env, MonadReader env m) => m String
 computeGreeting = do

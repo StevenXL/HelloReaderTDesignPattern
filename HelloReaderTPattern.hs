@@ -7,6 +7,9 @@
 
 import Test.Hspec (hspec, describe, it, shouldBe)
 
+import qualified Control.Monad.Writer.Lazy as Writer
+import qualified Control.Monad.State.Lazy as State
+
 import Control.Monad.Reader (ReaderT, MonadReader)
 import Control.Monad.Reader (runReaderT, ask)
 
@@ -26,26 +29,37 @@ instance HasName String where
     getName :: String -> String
     getName str = str
 
-class Monad m => OutPut m where -- 1) Extract the effect of outputting content to a typeclass
+class Monad m => OutPut m where
     outPut :: String -> m ()
 
 instance OutPut (ReaderT Env IO) where
     outPut :: String -> ReaderT Env IO ()
     outPut msg = liftIO $ putStrLn msg
 
+instance OutPut (ReaderT String (Writer.Writer String)) where
+    outPut :: String -> ReaderT String (Writer.Writer String) ()
+    outPut msg = Writer.tell msg
+
+instance OutPut (ReaderT String (State.State String)) where
+    outPut :: String -> ReaderT String (State.State String) ()
+    outPut msg = State.put msg
+
 main :: IO ()
-main = do
-    env <- initializeEnv
-    runReaderT program env
+main = hspec $ do -- 1) Using a different monadic stack, we can test IO / effects in a pure way
+    describe "program" $ do
+        it "outputs the correct greeting, Writer" $ do
+            let res = Writer.execWriter $ runReaderT program "Ada Lovelace"
+            res `shouldBe` "Hello, Ada Lovelace"
+        it "outputs the correct greeting, State" $ do
+            let res = State.execState (runReaderT program "Ada Lovelace") ""
+            res `shouldBe` "Hello, Ada Lovelace"
+
 
 initializeEnv :: IO Env
 initializeEnv = do
     name <- prompt "Enter a name" >> getLine
     return (Env { envName = name })
 
--- 2) By removing the MonadIO constraint (and replacing it with OutPut
--- constraint), computations defined in terms of `program` can no longer perform
--- arbitrary IO.
 program :: (HasName env, OutPut m, MonadReader env m) => m ()
 program = do
     greeting <- computeGreeting
